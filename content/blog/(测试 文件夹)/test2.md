@@ -42,4 +42,4 @@ sequenceDiagram
     服务B ->> redis : delete lock
 ```
 
-![image-20250416084603506](test2.assets/image-20250416084603506.png)
+![image-20250416084603506](./test2.assets/image-20250416084603506.png)

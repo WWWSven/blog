@@ -23,6 +23,7 @@ autonumber
     服务B ->> mysql : 访问临界资源
     服务B ->> redis : delete lock"
 />
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -40,3 +41,5 @@ sequenceDiagram
     服务B ->> mysql : 访问临界资源
     服务B ->> redis : delete lock
 ```
+
+![image-20250416084603506](test2.assets/image-20250416084603506.png)

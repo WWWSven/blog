@@ -1,0 +1,33 @@
+---
+title: Java 基础
+---
+
+
+
+## list 与 数组方便的互转
+
+```java
+int[] foo = {1,2,3};
+// int数组 => list
+List<Integer> list = Arrays.stream(foo).boxed().collect(Collectors.toList());
+// list => 数组
+Integer[] arrayInteger = list.toArray(new Integer[0]);
+// list => 数组(拆箱)
+int[] arrayInt = list.stream().mapToInt(Integer::intValue).toArray();
+```
+
+## 快速的reverse
+
+```java
+int[] foo = {1,2,3};
+// int数组 => list
+List<Integer> list = Arrays.stream(foo).boxed().collect(Collectors.toList());
+Collections.reverse(list);
+System.out.println(list); // [3, 2, 1]
+```
+
+## 快速求数组的最大值
+
+```java
+int mx = Arrays.stream(nums).max().getAsInt()
+```

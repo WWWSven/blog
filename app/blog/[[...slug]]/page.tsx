@@ -22,6 +22,7 @@ export default async function Page(props: {
   return (
     <DocsPage toc={page.data.toc} full={page.data.full} tableOfContent={{style: 'clerk'}} breadcrumb={{enabled: false, includePage: true,}}>
       <DocsTitle>{page.data.title}</DocsTitle>
+      <hr />
       <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>
         <MDXContent

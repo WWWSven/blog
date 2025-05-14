@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 export const metadata = {
-  title: 'My App',
+  title: 'Sven',
 };
 
 export default function HomePage() {

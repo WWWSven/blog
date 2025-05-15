@@ -2,6 +2,7 @@ import { RootProvider } from 'fumadocs-ui/provider';
 import './globals.css'
 import { Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { Analytics } from "@vercel/analytics/next"
 
 const inter = Inter({
   subsets: ['latin'],
@@ -17,6 +18,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           minHeight: '100vh',
         }}
       >
+      <Analytics/>
       <RootProvider search={{
           links: [
             ['Home', '/'],

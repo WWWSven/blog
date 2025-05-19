@@ -59,3 +59,75 @@ class Solution {
     }
 }
 ```
+
+## 300. 最长递增子序列
+
+给你一个整数数组 nums ，找到其中最长严格递增子序列的长度。
+
+子序列 是由数组派生而来的序列，删除（或不删除）数组中的元素而不改变其余元素的顺序。例如，[3,6,2,7] 是数组 [0,3,1,6,2,2,7] 的子序列。
+
+ 
+示例 1：<br/>
+输入：nums = [10,9,2,5,3,7,101,18]<br/>
+输出：4<br/>
+解释：最长递增子序列是 [2,3,7,101]，因此长度为 4 。
+
+```java title="O(n^2): 动态规划"
+class Solution {
+    public int lengthOfLIS(int[] nums) {
+        // i位置的最长递增子序列=以i-1结尾的子序列的最长递增子序列+1
+        // dp[i]: 以nums[i]结尾的最长上升子序列的长度
+        int[] dp=new int[nums.length];
+        int res=0;
+        for(int i=0;i<nums.length;i++){
+            dp[i]=1;
+            for(int j=0;j<i;j++){
+                if(nums[j]<nums[i]){
+                    dp[i]=Math.max(dp[i], dp[j]+1);
+                }
+            }            
+            res=Math.max(dp[i], res);
+        }
+        return res;
+    }
+}
+```
+
+考虑一个简单的贪心，如果我们要使上升子序列尽可能的长，则我们需要让序列上升得尽可能慢，因此我们希望每次在上升子序列最后加上的那个数尽可能的小。
+
+基于上面的贪心思路，我们维护一个数组 d[i] ，表示长度为 i 的最长上升子序列的末尾元素的最小值，用 len 记录目前最长上升子序列的长度，起始时 len 为 1，d[1]=nums[0]。
+
+对于d数组严格递增的证明: 如果d[j]≥d[i] 且 j\<i, 我们考虑从长度为 i 的最长上升子序列的末尾删除 i-j 个元素，那么这个序列长度变为 j ，且第 j 个元素 x(末尾元素)必然小于 d[i]，也就小于 d[j]。那么我们就找到了一个长度为 j 的最长上升子序列，并且末尾元素比 d[j] 小，从而产生了矛盾。因此数组 d 的单调性得证。
+
+> 如: d=[0,1,8,5], j=2, i=3, d[j]>d[i]
+从长度为3的最长上升子序列末尾删除1个元素, 得到一个长度为2的最长上升子序列, 这个长度为2的子序列末尾元素小于5; 与`长度为2的最长子序列的末尾元素的最小值是8`不符合;
+
+```java title="O(nlogn): 贪心+二分"
+class Solution {
+    public int lengthOfLIS(int[] nums) {
+        // i位置的最长递增子序列=以i-1结尾的子序列的最长递增子序列+1
+        // d[i]: 长度为i的最长递增子序列的'末尾元素的最小值'
+        int[] d=new int[nums.length+1];
+        d[1]=nums[0];
+        int length=1;
+        for(int i=1;i<nums.length;i++){
+            if(nums[i]>d[length]){
+                d[++length]=nums[i];
+            }else{
+                int l=1,r=length,pos=0;
+                while(l<=r){
+                    int m=l+(r-l)/2;
+                    if(d[m]>=nums[i]){
+                        r=m-1;
+                    }else{
+                        pos=m;
+                        l=m+1;
+                    }
+                }
+                d[pos+1]=nums[i];
+            }
+        }
+        return length;
+    }
+}
+```

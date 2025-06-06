@@ -1,0 +1,327 @@
+---
+title: MySQL多主一从
+---
+
+# 一个DEMO
+
+| server-id | 角色 | 需要同步的库 | ip |
+| ---- | ---- | ---- | ---- |
+| 111111 | `主` | | |
+| 4444 | 从 | core, terminal | 127.0.0.4 |
+| 8888 |  从| history, terminal-msg | 127.0.0.8 |
+
+## 4444 操作步骤
+
+### 新增配置文件
+
+```ini
+[mysqld]
+# 开启binglog
+log-bin=mysql-bin
+sync-binlog=1
+binlog-format=ROW
+expire_logs_days=2
+# server-id
+server-id = 4444
+# gtid about
+gtid_mode = on
+# 防止主从切换时出问题
+log_slave_updates = on  
+enforce_gtid_consistency = on
+# 同步库配置
+binlog_do_db = core    
+binlog_do_db = terminal     
+
+binlog_ignore_db = mysql
+binlog_ignore_db = information_schema
+binlog_ignore_db = performation_schema
+binlog_ignore_db = sys
+```
+
+### 删除默认server-id
+
+```ini
+server-id = 1
+```
+
+### 添加用户+授权
+
+```sql
+CREATE USER 'slave'@'%' IDENTIFIED BY 'slave4444';
+GRANT REPLICATION SLAVE ON *.* TO 'slave'@'%';
+FLUSH PRIVILEGES;
+```
+
+### dump数据
+
+```shell
+mysqldump -uroot -p --databases --triggers --routines --events core terminal > ./backFrom4444.sql
+```
+
+### slave端针对4444的配置
+
+```sql
+CHANGE MASTER TO 
+master_host='127.0.0.4', 
+master_user='slave',
+master_password='slave4444',
+master_port=3306,
+master_auto_position=1 
+for channel '4444';
+```
+
+## 8888 操作步骤
+
+### 新增
+
+```ini
+[mysqld]
+# 开启binlog
+log-bin=mysql-bin
+sync-binlog=1
+binlog-format=ROW
+expire_logs_days=2
+# 配置id
+server-id = 8888
+# gtid about
+gtid_mode = on
+log_slave_updates = on 
+enforce_gtid_consistency = on
+# 具体同步库配置
+binlog_do_db = history     
+binlog_do_db = terminal-msg
+ 
+binlog_ignore_db = mysql
+binlog_ignore_db = information_schema
+binlog_ignore_db = performation_schema
+binlog_ignore_db = sys
+```
+
+### 删除默认server-id
+
+```ini
+server-id = 1
+```
+
+### 添加用户+授权
+
+```sql
+CREATE USER 'slave'@'%' IDENTIFIED BY 'slave8888';
+GRANT REPLICATION SLAVE ON *.* TO 'slave'@'%';
+FLUSH PRIVILEGES;
+```
+
+### dump数据
+
+```shell
+mysqldump -uroot -p --databases --triggers --routines --events history terminal-msg > ./backFrom8888.sql
+```
+
+### slave端针对8888的配置
+
+```sql
+CHANGE MASTER TO 
+master_host='127.0.0.8', 
+master_user='slave',
+master_password='slave8888',
+master_port=3306,
+master_auto_position=1 // 这个会自动根据gtid同步, 不用配置binlog文件名和偏移量
+for channel '8888';
+```
+
+## 整体流程
+
+### 1. 检查slave配置文件
+
+   - 检查是否开启binlog, GTID模式必须开
+     ```ini
+     log-bin=mysql-bin
+     sync-binlog=1
+     binlog-format=ROW
+     expire_logs_days=2
+     ```
+
+   - 检查是否开启事件
+     ```ini
+     event_scheduler=ON
+     ```
+
+   - 检查是否配置server-id
+     ```ini
+     server-id=111111
+     ```
+
+   - 检查是否开启gtid
+     ```ini
+     gtid_mode = on
+     log_slave_updates = on 
+     enforce_gtid_consistency = on
+     ```
+
+     - log_slave_updates: slave虽然开启了binlog, 直接slave写入, binlog会留下日志, 但是从master经过sql线程的写入不会写入slave的binlog, 需要用这个参数开启写入.
+     - enforce_gtid_consistency: 强一致性
+
+   - 检查mysql启动时不启动同步
+     ```ini
+     skip-slave-start = on
+     ```
+
+     假设有一个之前没有同步的库A, 现在想同步到slave, 则先修改ini, 然后开启mysql服务, 默认开启就同步的话现在就有数据写入了, 但是之前dump的数据还没有导入到slave, 这时候就会有问题 
+     
+   - 检查master和中继日志的信息是否写入表中, 默认是写文件
+     
+     ```ini
+     master_info_repository      = table
+     relay_log_info_repository   = table     
+     ```
+
+### 2. 检查master配置文件
+
+   - 检查binlog是否开启, 是否配置了server-id
+     ```ini
+     log-bin=mysql-bin
+     sync-binlog=1
+     binlog-format=ROW
+     expire_logs_days=2
+     
+     server-id = 1
+     ```
+     
+   - 检查gtid是否开启, 是否开启强一致性检查
+     ```ini
+     gtid_mode = on
+     log_slave_updates = on  // 主从切换有用
+     enforce_gtid_consistency = on
+     ```
+     
+   - 检查要同步和跳过同步的数据库
+     ```ini
+     binlog_do_db = test3     #要同步的数据库
+     
+     binlog_ignore_db = mysql     #不需要同步的数据库 
+     binlog_ignore_db = information_schema
+     binlog_ignore_db = performation_schema
+     binlog_ignore_db = sys
+     ```
+
+   - 如果修改了master的配置, 重启MySQL
+
+### 3. 查看master的状态
+
+      - 如果配置生效则gtid和日志以及偏移量不会为空
+        ```sql
+        mysql> SHOW MASTER STATUS;
+        ```
+
+###  4. master创建同步用户
+
+   - 创建一个专门用于同步的用户, 并且赋予权限
+     ```sql
+     CREATE USER 'slave'@'%' IDENTIFIED BY 'slavePWD';
+     GRANT REPLICATION SLAVE ON *.* TO 'slave'@'%';
+     FLUSH PRIVILEGES;
+     ```
+
+### 5. 加全局读锁
+
+   - 保持主从数据强一致性的必要操作
+     ```sql
+     mysql> FLUSH TABLES WITH READ LOCK;
+     ```
+
+### 6. 把现有的数据从master手动dump, 再手动同步到slave
+
+   - 使用`mysqldump`
+     ```sql
+     -- 使用--single-transaction获取一致性视图
+     mysqldump -uroot -p --databases --triggers --routines --events --single-transaction test > ./back.sql
+     ```
+
+### 7. 同步完之后解锁
+
+     ```sql
+     mysql> UNLOCK TABLES;	
+     ```
+
+### 8. 导入master的数据
+
+   - 使用source命令
+
+### 9. 在slave配置主从同步
+
+   - position+binlog的配置命令
+
+     ```sql
+     mysql> CHANGE MASTER TO 
+     MASTER_HOST='master_host_name/master的ip', 
+     MASTER_USER='replication_user_name/master用于同步的用户名', 
+     MASTER_PASSWORD='replication_password/密码', 
+     MASTER_LOG_FILE='recorded_log_file_name/binLog文件名',
+     MASTER_LOG_POS='POS/偏移量'
+     for channel '4444';
+     ```
+
+   - GTID的命令
+     ```sql
+     mysql> CHANGE MASTER TO 
+     master_host='x.x.x.x', 
+     master_user='x',
+     master_password='x',
+     master_port=3306,
+     master_auto_position=1 // 这个会自动根据gtid同步, 不用配置binlog文件名和偏移量
+     for channel 'xxx';
+     ```
+
+### 10. 开启主从同步
+
+     ```sql
+     mysql> start slave;
+     ```
+
+### 11. 检查主从状态
+
+    - 检查slave的状态
+      ```sql
+      mysql> show slave status\G;
+      ```
+      1. slave_io_running(slave读取master的binlog并写入slave中继日志的线程状态)
+      1. slave_sql_running(将中继日志解析成SQL后执行的线程状态)
+      
+    - 检查master的状态
+      ```sql
+      mysql> show master status\G;
+      ```
+
+---
+
+## 备注
+
+- 需要单独启动或停止某个channel时候使用
+    ```sql
+    mysql> start slave for channel '300'; 
+    mysql> stop slave for channel '300';  
+    ```
+
+- 主从常用命令
+    ```sql
+    RESET SLAVE ALL
+    -- 清除slave的同步复制信息、包括连接信息和二进制文件名、偏移量。
+    -- 从库上执行这个命令后，使用show slave status将不会有输出。
+    -- 加了all会清除change master的配置, 不加只会删除relaylog, 所以不加all执行show slave status不会是empty,
+    ```
+
+    ```sql
+    reset master 
+    -- 在master清除binary log等信息
+    -- 轻易不要清除binlog, 比如建表语句还没进入slave的中继日志,,那把binlog清了, slave就永远没有这个表了
+    ```
+
+- 出现无法解决的异常时重新全量同步主从
+
+1. stop slave for channel 'xxxx';
+2. reset master; [注意: 会清除binlog, 需要重新把数据dump给slave]
+3. reset slave for channel 'xxxx';
+4. start slave for channel 'xxxx';
+
+---
+

@@ -1,0 +1,126 @@
+---
+title: MySQL多分区
+---
+
+## 一个按月份分区的方案
+
+### 表结构
+
+```sql
+create table terlastbatterylog
+(
+    machineNO          varchar(30) default '' not null comment '设备编号',
+    dt                 datetime               not null comment '时间',
+    soc                int                    null comment '电池电量',
+    soh                double                 null comment '电池健康度',
+    batteryTemp        double                 null comment '电池温度',
+    primary key (machineNO, dt)
+)engine = InnoDB character set utf8 collate utf8_general_ci;
+```
+
+### 具体分区(使用dt做分区关键字)
+
+```sql
+alter table terlastbatterylog partition by range columns (dt)(
+  partition p202305 values less than ('2023-06-01'),
+  partition p202306 values less than ('2023-07-01'),
+  partition p202307 values less than ('2023-08-01'),
+  partition p202308 values less than ('2023-09-01'),
+  partition p202309 values less than ('2023-10-01'),
+  partition p202310 values less than ('2023-11-01'),
+  partition p202311 values less than ('2023-12-01'),
+  partition p202312 values less than ('2024-01-01'),
+  partition p202401 values less than ('2024-02-01'),
+  partition p202402 values less than ('2024-03-01'),
+  partition p202403 values less than ('2024-04-01'),
+  partition p202404 values less than ('2024-05-01'),
+  partition p202405 values less than ('2024-06-01'),
+  partition p202406 values less than ('2024-07-01'),
+  partition p202407 values less than ('2024-08-01'),
+  partition p202408 values less than ('2024-09-01'),
+  partition p202409 values less than ('2024-10-01'),
+  partition p202410 values less than ('2024-11-01'),
+  partition p202411 values less than ('2024-12-01'),
+  partition p202412 values less than ('2025-01-01'),
+  partition p_max   values less than maxvalue 
+  -- 添加了maxvalue之后, 若想继续递增分区需要对max分区进行分裂
+);
+```
+
+### 分区拓展
+
+- 当没有max分区的时候, 如果写入的dt超过分区最大值(最后一个less then后面的)的时候会报错, 写不进去, 这时候需要手动add
+  ```sql
+  alter table terlastbatterylog add partition (partition p202501 values less than ('2025-02-01'));
+  ```
+
+- 当有max分区的时候, 需要对max分区进行分裂(我们采用的方式)
+  ```sql
+  alter table terlastbatterylog reorganize partition p_max into (
+      partition p202501 values less than ('2025-02-01'),
+      partition p202502 values less than ('2025-03-01'),
+      partition p_max values less than maxvalue
+  );
+  ```
+
+### 如何查询分区的数据, 或数据属于那个分区
+
+- explain
+  ```sql
+  explain select * from terlastbatterylog where dt = '2024-11-01 00:00:01';
+  ```
+
+- select
+  ```sql
+  select * from terlastbatterylog partition (p_max);
+  ```
+
+
+## 分区数量受限问题
+
+当使用myisam表的时候, open_files_limit 最多打开文件默认值是1024个, 
+当分区表数量达到1024个时, 每当第一次访问一个分区表的时候，MySQL需要把所有的分区都访问一遍,
+就超出限制报错 `can't open file`
+
+因为这种策略是mysql一开始在server层实现的, 比较粗糙,innodb没有这个问题;
+
+
+
+## 常用操作
+
+在 MySQL 中，可以使用以下方法查询**某个数据具体属于哪个分区**：
+
+1. 使用 `EXPLAIN PARTITIONS` 语句查询。
+    
+    该语句可以返回表中所有分区的分区键范围和分区名称。例如：
+
+    ````sql
+    EXPLAIN PARTITIONS SELECT * FROM t WHERE ftime = '2022-01-01 00:00:00';
+    -- 在上述示例中，使用 SELECT 语句查询数据，然后使用 EXPLAIN PARTITIONS 语句查询该数据所属的分区。
+    ````
+
+2. 使用 SHOW CREATE TABLE 语句查询。
+
+    该语句可以返回表的创建语句，其中包含了分区的信息。例如：
+
+    ```sql
+    SHOW CREATE TABLE t;
+    -- 在上述示例中，使用 SHOW CREATE TABLE 语句查询表的创建语句，其中包含了分区的信息，可以根据分区规则和分区名称确定数据所属的分区。
+    ```
+
+需要注意的是，以上方法可以查询某个数据所属的分区，但是在实际应用中，尽量避免频繁查询数据所属的分区，因为这可能会影响系统的性能和可用性。
+
+如果需要对某个分区中的数据进行操作，可以直接指定分区名称进行操作，例如：
+
+```sql
+SELECT * FROM t PARTITION (p202201);
+```
+
+在上述示例中，使用 PARTITION 子句指定要查询的分区名称，可以直接查询该分区中的数据。类似地，也可以使用 PARTITION 子句进行删除、更新等操作。
+
+需要注意的是，对于分区表的操作，需要根据实际情况进行优化和调整，以提高系统的性能和可用性。同时，也需要注意对分区的管理和维护，对于过期或者不再使用的分区，应该及时进行删除或归档，以避免数据堆积和影响系统性能。
+
+---
+
+参考: 
+- \<\<MySQL实战45讲>>: 43 要不要使用分区表？
